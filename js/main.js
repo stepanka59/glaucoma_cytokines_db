@@ -12,7 +12,6 @@ class CytokinesDatabase {
 
     async init() {
         try {
-            // Загрузка данных
             console.log('Загрузка данных...');
             const response = await fetch('./data/cytokines_final.json');
             
@@ -23,7 +22,6 @@ class CytokinesDatabase {
             this.data = await response.json();
             console.log(`Загружено цитокинов: ${this.data.цитокины.length}`);
             
-            // Инициализация
             this.filteredData = [...this.data.цитокины];
             this.updateGeneralStats();
             this.renderTable();
@@ -31,7 +29,7 @@ class CytokinesDatabase {
             
         } catch (error) {
             console.error('Ошибка загрузки данных:', error);
-            this.showError('Не удалось загрузить данные. Проверьте консоль для подробностей.');
+            this.showError('Не удалось загрузить данные.');
         }
     }
 
@@ -39,7 +37,6 @@ class CytokinesDatabase {
         const totalCytokines = this.data.цитокины.length;
         const totalMeasurements = this.data.метаданные.всего_измерений;
         
-        // Считаем цитокины с данными (хотя бы в одной стадии n > 0)
         const cytokinesWithData = this.data.цитокины.filter(cytokine => {
             return Object.values(cytokine.стадии).some(stage => stage.n > 0);
         }).length;
@@ -58,14 +55,11 @@ class CytokinesDatabase {
         this.currentFilters.minSamples = minSamples;
         this.currentSort = sortBy;
         
-        // Фильтрация
         this.filteredData = this.data.цитокины.filter(cytokine => {
-            // Поиск по названию
             if (searchTerm && !cytokine.название.toLowerCase().includes(searchTerm)) {
                 return false;
             }
             
-            // Фильтр по минимальному количеству измерений
             if (minSamples > 0) {
                 const hasEnoughSamples = Object.values(cytokine.стадии).some(stage => stage.n >= minSamples);
                 if (!hasEnoughSamples) {
@@ -76,10 +70,7 @@ class CytokinesDatabase {
             return true;
         });
         
-        // Сортировка
         this.sortData();
-        
-        // Обновление таблицы
         this.renderTable();
     }
 
@@ -88,22 +79,16 @@ class CytokinesDatabase {
             switch (this.currentSort) {
                 case 'name':
                     return a.название.localeCompare(b.название);
-                    
                 case 'control':
                     return (b.стадии.control?.среднее || 0) - (a.стадии.control?.среднее || 0);
-                    
                 case 'stage1':
                     return (b.стадии['1']?.среднее || 0) - (a.стадии['1']?.среднее || 0);
-                    
                 case 'stage2':
                     return (b.стадии['2']?.среднее || 0) - (a.стадии['2']?.среднее || 0);
-                    
                 case 'stage3':
                     return (b.стадии['3']?.среднее || 0) - (a.стадии['3']?.среднее || 0);
-                    
                 case 'stage4':
                     return (b.стадии['4']?.среднее || 0) - (a.стадии['4']?.среднее || 0);
-                    
                 default:
                     return a.название.localeCompare(b.название);
             }
@@ -122,8 +107,7 @@ class CytokinesDatabase {
                 </tr>
             `;
             
-            document.getElementById('tableInfo').textContent = 
-                `Найдено цитокинов: 0`;
+            document.getElementById('tableInfo').textContent = `Найдено цитокинов: 0`;
             return;
         }
         
@@ -172,34 +156,27 @@ class CytokinesDatabase {
         });
         
         tbody.innerHTML = html;
-        
-        // Информация о таблице
         document.getElementById('tableInfo').textContent = 
             `Показано цитокинов: ${this.filteredData.length} из ${this.data.цитокины.length}`;
     }
 
     setupEventListeners() {
-        // Кнопка применения фильтров
         document.getElementById('applyFilters').addEventListener('click', () => {
             this.applyFilters();
         });
         
-        // Поиск при вводе
         document.getElementById('searchCytokine').addEventListener('input', () => {
             this.applyFilters();
         });
         
-        // Изменение минимального количества измерений
         document.getElementById('minSamples').addEventListener('change', () => {
             this.applyFilters();
         });
         
-        // Сортировка
         document.getElementById('sortBy').addEventListener('change', () => {
             this.applyFilters();
         });
         
-        // Сброс фильтров
         document.getElementById('resetFilters').addEventListener('click', () => {
             document.getElementById('searchCytokine').value = '';
             document.getElementById('minSamples').value = 0;
@@ -207,7 +184,6 @@ class CytokinesDatabase {
             this.applyFilters();
         });
         
-        // Экспорт
         document.getElementById('exportTable').addEventListener('click', () => {
             this.exportToCSV();
         });
@@ -222,3 +198,54 @@ class CytokinesDatabase {
         
         const csvRows = [headers.join(',')];
         
+        this.filteredData.forEach(cytokine => {
+            const row = [cytokine.название];
+            const stages = ['control', '1', '2', '3', '4'];
+            
+            stages.forEach(stage => {
+                const data = cytokine.стадии[stage];
+                if (data && data.n > 0) {
+                    row.push(data.n, data.среднее.toFixed(4), data.стд_отклонение.toFixed(4));
+                } else {
+                    row.push('', '', '');
+                }
+            });
+            
+            csvRows.push(row.join(','));
+        });
+        
+        const csvString = csvRows.join('\n');
+        const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `cytokines_${new Date().toISOString().slice(0,10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    showError(message) {
+        const tbody = document.getElementById('cytokinesTableBody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 50px; color: #e74c3c;">
+                    <div style="font-size: 1.2rem; margin-bottom: 10px;">⚠️ Ошибка</div>
+                    <div>${message}</div>
+                </td>
+            </tr>
+        `;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    window.database = new CytokinesDatabase();
+});
