@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Детали цитокина - База данных цитокинов</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .detail-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 10px 20px;
+            border: 2px solid #3498db;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .back-link:hover {
+            background: #3498db;
+            color: white;
+        }
+        
+        .cytokine-header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+        
+        .cytokine-title {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .cytokine-meta {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+        
+        .charts-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            height: 400px;
+        }
+        
+        .chart-container h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            text-align: center;
+        }
+        
+        .chart-wrapper {
+            height: 300px;
+            position: relative;
+        }
+        
+        .stats-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 40px;
+        }
+        
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .stats-table th {
+            background: #3498db;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        .stats-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .stats-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .stage-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: white;
+        }
+        
+        .stage-control { background: #3498db; }
+        .stage-1 { background: #2ecc71; }
+        .stage-2 { background: #f39c12; }
+        .stage-3 { background: #e74c3c; }
+        .stage-4 { background: #9b59b6; }
+        
+        .stat-highlight {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .no-data-cell {
+            color: #95a5a6;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="detail-container">
+        <a href="index.html" class="back-link">← Назад к таблице цитокинов</a>
+
+        <div class="cytokine-header">
+            <h1 class="cytokine-title" id="cytokineName">Загрузка...</h1>
+            <div class="cytokine-meta" id="cytokineMeta"></div>
+        </div>
+
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3>Средние значения по стадиям</h3>
+                <div class="chart-wrapper">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <h3>Распределение значений</h3>
+                <div class="chart-wrapper">
+                    <canvas id="valuesChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-section">
+            <h2>📊 Детальная статистика</h2>
+            <table class="stats-table" id="statsTable">
+                <thead>
+                    <tr>
+                        <th>Стадия</th>
+                        <th>Количество (n)</th>
+                        <th>Среднее значение</th>
+                        <th>Стандартное отклонение</th>
+                        <th>Минимум</th>
+                        <th>Максимум</th>
+                        <th>Медиана</th>
+                    </tr>
+                </thead>
+                <tbody id="statsBody">
+                    <!-- Данные загружаются динамически -->
+                </tbody>
+            </table>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+            <button onclick="window.print()" class="btn-primary" style="margin-right: 10px;">🖨️ Печать отчета</button>
+            <button onclick="downloadReport()" class="btn-secondary">📥 Скачать данные</button>
+        </div>
+    </div>
+
+    <script>
+        class CytokineDetailPage {
+            constructor() {
+                this.cytokineData = null;
+                this.charts = {};
+                this.init();
+            }
+
+            async init() {
+                // Получаем название цитокина из URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const cytokineName = urlParams.get('cytokine');
+                
+                if (!cytokineName) {
+                    this.showError('Цитокин не указан');
+                    return;
+                }
+
+                try {
+                    // Загружаем данные
+                    const response = await fetch('./data/cytokines_final.json');
+                    const data = await response.json();
+                    
+                    // Ищем нужный цитокин
+                    this.cytokineData = data.цитокины.find(c => c.название === cytokineName);
+                    
+                    if (!this.cytokineData) {
+                        this.showError(`Цитокин "${cytokineName}" не найден`);
+                        return;
+                    }
+                    
+                    // Отображаем страницу
+                    this.renderPage();
+                    this.createCharts();
+                    
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    this.showError('Не удалось загрузить данные');
+                }
+            }
+
+            renderPage() {
+                // Заголовок
+                document.getElementById('cytokineName').textContent = this.cytokineData.название;
+                
+                // Считаем общую статистику
+                const stages = ['control', '1', '2', '3', '4'];
+                let totalMeasurements = 0;
+                let stagesWithData = 0;
+                
+                stages.forEach(stage => {
+                    const data = this.cytokineData.стадии[stage];
+                    if (data && data.n > 0) {
+                        totalMeasurements += data.n;
+                        stagesWithData++;
+                    }
+                });
+                
+                document.getElementById('cytokineMeta').textContent = 
+                    `${totalMeasurements} измерений | Данные в ${stagesWithData} стадиях`;
+                
+                // Таблица статистики
+                this.renderStatsTable();
+            }
+
+            renderStatsTable() {
+                const tbody = document.getElementById('statsBody');
+                const stages = [
+                    {id: 'control', name: 'Контроль', class: 'stage-control'},
+                    {id: '1', name: 'Стадия 1', class: 'stage-1'},
+                    {id: '2', name: 'Стадия 2', class: 'stage-2'},
+                    {id: '3', name: 'Стадия 3', class: 'stage-3'},
+                    {id: '4', name: 'Стадия 4', class: 'stage-4'}
+                ];
+                
+                let html = '';
+                
+                stages.forEach(stageInfo => {
+                    const data = this.cytokineData.стадии[stageInfo.id];
+                    
+                    if (data && data.n > 0) {
+                        // Рассчитываем медиану
+                        const sortedValues = [...data.значения].sort((a, b) => a - b);
+                        const median = sortedValues.length % 2 === 0 
+                            ? (sortedValues[sortedValues.length/2 - 1] + sortedValues[sortedValues.length/2]) / 2
+                            : sortedValues[Math.floor(sortedValues.length/2)];
+                        
+                        const min = Math.min(...data.значения);
+                        const max = Math.max(...data.значения);
+                        
+                        html += `
+                            <tr>
+                                <td><span class="stage-badge ${stageInfo.class}">${stageInfo.name}</span></td>
+                                <td class="stat-highlight">${data.n}</td>
+                                <td class="stat-highlight">${data.среднее.toFixed(4)}</td>
+                                <td>${data.стд_отклонение.toFixed(4)}</td>
+                                <td>${min.toFixed(4)}</td>
+                                <td>${max.toFixed(4)}</td>
+                                <td>${median.toFixed(4)}</td>
+                            </tr>
+                        `;
+                    } else {
+                        html += `
+                            <tr>
+                                <td><span class="stage-badge ${stageInfo.class}">${stageInfo.name}</span></td>
+                                <td colspan="6" class="no-data-cell">Нет данных</td>
+                            </tr>
+                        `;
+                    }
+                });
+                
+                tbody.innerHTML = html;
+            }
+
+            createCharts() {
+                // График 1: Столбчатая диаграмма средних значений
+                this.createBarChart();
+                
+                // График 2: Точечная диаграмма всех значений
+                this.createValuesChart();
+            }
+
+            createBarChart() {
+                const ctx = document.getElementById('barChart').getContext('2d');
+                const stages = ['Контроль', 'Стадия 1', 'Стадия 2', 'Стадия 3', 'Стадия 4'];
+                const stageIds = ['control', '1', '2', '3', '4'];
+                
+                const means = stageIds.map(id => {
+                    const data = this.cytokineData.стадии[id];
+                    return data && data.n > 0 ? data.среднее : null;
+                });
+                
+                const errors = stageIds.map(id => {
+                    const data = this.cytokineData.стадии[id];
+                    return data && data.n > 0 ? data.стд_отклонение : null;
+                });
+                
+                const backgroundColors = [
+                    '#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6'
+                ];
+                
+                this.charts.barChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: stages,
+                        datasets: [{
+                            label: 'Среднее значение',
+                            data: means,
+                            backgroundColor: backgroundColors,
+                            borderColor: backgroundColors.map(c => this.darkenColor(c, 20)),
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => {
+                                        const stageId = stageIds[context.dataIndex];
+                                        const data = this.cytokineData.стадии[stageId];
+                                        if (!data || data.n === 0) return 'Нет данных';
+                                        
+                                        return [
+                                            `Среднее: ${data.среднее.toFixed(2)}`,
+                                            `± ${data.стд_отклонение.toFixed(2)} (ст. отклонение)`,
+                                            `n = ${data.n}`
+                                        ];
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Уровень экспрессии'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            createValuesChart() {
+                const ctx = document.getElementById('valuesChart').getContext('2d');
+                const stages = ['control', '1', '2', '3', '4'];
+                const allValues = [];
+                const labels = [];
+                const colors = [];
+                
+                stages.forEach((stage, index) => {
+                    const data = this.cytokineData.стадии[stage];
+                    if (data && data.n > 0) {
+                        data.значения.forEach(value => {
+                            allValues.push(value);
+                            labels.push(stage === 'control' ? 'Контроль' : `Стадия ${stage}`);
+                            colors.push(['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6'][index]);
+                        });
+                    }
+                });
+                
+                if (allValues.length === 0) {
+                    document.getElementById('valuesChart').parentElement.innerHTML = 
+                        '<p style="text-align: center; color: #95a5a6;">Нет данных для построения графика</p>';
+                    return;
+                }
+                
+                // Группируем по стадиям для лучшего отображения
+                const groupedData = [];
+                stages.forEach((stage, stageIndex) => {
+                    const data = this.cytokineData.стадии[stage];
+                    if (data && data.n > 0) {
+                        data.значения.forEach((value, valueIndex) => {
+                            groupedData.push({
+                                x: stageIndex + (valueIndex / data.n) * 0.8 - 0.4,
+                                y: value,
+                                stage: stage
+                            });
+                        });
+                    }
+                });
+                
+                this.charts.valuesChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Измерения',
+                            data: groupedData,
+                            backgroundColor: groupedData.map(d => 
+                                ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6'][
+                                    ['control', '1', '2', '3', '4'].indexOf(d.stage)
+                                ]
+                            ),
+                            borderColor: groupedData.map(d => 
+                                this.darkenColor(
+                                    ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6'][
+                                        ['control', '1', '2', '3', '4'].indexOf(d.stage)
+                                    ], 20
+                                )
+                            ),
+                            borderWidth: 1,
+                            pointRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Стадии'
+                                },
+                                min: -0.5,
+                                max: 4.5,
+                                ticks: {
+                                    callback: function(value) {
+                                        const stagesNames = ['Контроль', 'Стадия 1', 'Стадия 2', 'Стадия 3', 'Стадия 4'];
+                                        return stagesNames[Math.round(value)] || '';
+                                    }
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Значение'
+                                },
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => {
+                                        const stageNames = {
+                                            'control': 'Контроль',
+                                            '1': 'Стадия 1',
+                                            '2': 'Стадия 2', 
+                                            '3': 'Стадия 3',
+                                            '4': 'Стадия 4'
+                                        };
+                                        const stage = context.raw.stage;
+                                        return `${stageNames[stage]}: ${context.parsed.y.toFixed(4)}`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            darkenColor(color, percent) {
+                const num = parseInt(color.slice(1), 16);
+                const amt = Math.round(2.55 * percent);
+                const R = (num >> 16) - amt;
+                const G = (num >> 8 & 0x00FF) - amt;
+                const B = (num & 0x0000FF) - amt;
+                
+                return '#' + (
+                    0x1000000 +
+                    (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                    (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                    (B < 255 ? B < 1 ? 0 : B : 255)
+                ).toString(16).slice(1);
+            }
+
+            showError(message) {
+                document.querySelector('.detail-container').innerHTML = `
+                    <div style="text-align: center; padding: 100px;">
+                        <h2 style="color: #e74c3c;">⚠️ Ошибка</h2>
+                        <p style="font-size: 1.2rem; margin: 20px 0;">${message}</p>
+                        <a href="index.html" class="back-link">← Вернуться к таблице цитокинов</a>
+                    </div>
+                `;
+            }
+        }
+
+        function downloadReport() {
+            const cytokineName = document.getElementById('cytokineName').textContent;
+            
+            // Создаем CSV содержимое
+            let csvContent = "Цитокин;Стадия;n;Среднее;Стд. отклонение;Минимум;Максимум;Медиана\n";
+            
+            const stages = [
+                {id: 'control', name: 'Контроль'},
+                {id: '1', name: 'Стадия 1'},
+                {id: '2', name: 'Стадия 2'},
+                {id: '3', name: 'Стадия 3'},
+                {id: '4', name: 'Стадия 4'}
+            ];
+            
+            stages.forEach(stageInfo => {
+                const data = window.detailPage?.cytokineData?.стадии[stageInfo.id];
+                if (data && data.n > 0) {
+                    const sortedValues = [...data.значения].sort((a, b) => a - b);
+                    const median = sortedValues.length % 2 === 0 
+                        ? (sortedValues[sortedValues.length/2 - 1] + sortedValues[sortedValues.length/2]) / 2
+                        : sortedValues[Math.floor(sortedValues.length/2)];
+                    
+                    const min = Math.min(...data.значения);
+                    const max = Math.max(...data.значения);
+                    
+                    csvContent += `${cytokineName};${stageInfo.name};${data.n};${data.среднее.toFixed(4)};${data.стд_отклонение.toFixed(4)};${min.toFixed(4)};${max.toFixed(4)};${median.toFixed(4)}\n`;
+                }
+            });
+            
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `cytokine_${cytokineName}_data.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            window.detailPage = new CytokineDetailPage();
+        });
+    </script>
+</body>
+</html>
